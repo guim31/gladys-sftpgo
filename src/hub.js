@@ -71,6 +71,9 @@ export const RECENT_UPLOADS = 20;
 export const QUOTA_HYSTERESIS = 5;
 
 const MAX_TRANSPORTS_PER_REQUEST = 100;
+// The event log is read again this far back, the ids already seen skipped.
+export const LOOKBACK_MS = 30_000;
+const MAX_SEEN = 5000;
 
 /** Local midnight (the time zone of Gladys, injected as TZ) and its day key. */
 export function dayOf(time) {
@@ -85,17 +88,19 @@ export function dayOf(time) {
 
 const emptyToday = (key) => ({ key, uploads: 0, failedLogins: 0, byUser: {} });
 
-/** Cursor of an event list after `events` (oldest first): last millisecond, ids seen in it. */
-function advance(cursor, events) {
-  if (events.length === 0) {
-    return cursor;
-  }
-  const ms = events.at(-1).time;
-  const ids = events.filter((event) => event.time === ms).map((event) => event.id);
-  if (cursor && cursor.ms === ms) {
-    ids.unshift(...cursor.ids);
-  }
-  return { ms, ids: [...new Set(ids)].slice(-1000) };
+/**
+ * Cursor of an event list after `events` (oldest first): the newest
+ * millisecond read, and the ids read within LOOKBACK_MS of it. The next read
+ * starts LOOKBACK_MS earlier and skips these ids: the eventstore plugin may
+ * write an event a little after a newer one (concurrent uploads, a retried
+ * database write).
+ */
+export function advance(cursor, events) {
+  const ms = Math.max(cursor?.ms ?? 0, ...events.map((event) => event.time));
+  const seen = [...(cursor?.seen ?? []), ...events.map((event) => [event.id, event.time])].filter(
+    ([, time]) => time >= ms - LOOKBACK_MS,
+  );
+  return { ms, seen: [...new Map(seen).entries()].slice(-MAX_SEEN) };
 }
 
 export class SftpgoHub {
@@ -154,6 +159,7 @@ export class SftpgoHub {
       last: {},
       recent: [],
       quotaAbove: {},
+      quotaThreshold: null,
     };
   }
 
@@ -171,6 +177,7 @@ export class SftpgoHub {
       last: object(saved?.last) ?? {},
       recent: Array.isArray(saved?.recent) ? saved.recent : [],
       quotaAbove: object(saved?.quotaAbove) ?? {},
+      quotaThreshold: saved?.quotaThreshold ?? null,
     };
     await this.reconfigure(config);
   }
@@ -333,13 +340,14 @@ export class SftpgoHub {
 
   async readEvents(client, kind) {
     const cursor = this.saved[kind];
-    if (!cursor) {
+    if (!cursor?.seen) {
       const result = await client.events(kind, { newest: true });
       return { ...result, initial: true };
     }
     const result = await client.events(kind, {
-      sinceMs: cursor.ms,
-      seen: new Set(cursor.ids),
+      // 0: the log was empty at the first read, everything in it is new.
+      sinceMs: cursor.ms > 0 ? Math.max(1, cursor.ms - LOOKBACK_MS) : 0,
+      seen: new Set(cursor.seen.map(([id]) => id)),
     });
     return { ...result, initial: false };
   }
@@ -413,7 +421,11 @@ export class SftpgoHub {
   /** The new uploads: counted, remembered, announced (not on the first read). */
   async applyUploads({ events, initial, truncated }) {
     if (events.length === 0) {
-      return false;
+      // An empty log at the first read: from now on, every upload is new.
+      if (initial) {
+        this.saved.uploads = advance(null, []);
+      }
+      return initial;
     }
     const today = dayOf(this.now());
     const announced = [];
@@ -470,7 +482,10 @@ export class SftpgoHub {
   /** The new failed logins: counted, announced by user and address (not on the first read). */
   async applyLogins({ events, initial }) {
     if (events.length === 0) {
-      return false;
+      if (initial) {
+        this.saved.logins = advance(null, []);
+      }
+      return initial;
     }
     const today = dayOf(this.now());
     const groups = new Map();
@@ -505,6 +520,12 @@ export class SftpgoHub {
   async applyQuotas() {
     let dirty = false;
     const threshold = this.config.quotaThreshold;
+    if (this.saved.quotaThreshold !== threshold) {
+      // Another threshold: the users above it are recorded again, not announced.
+      this.saved.quotaThreshold = threshold;
+      this.saved.quotaAbove = {};
+      dirty = true;
+    }
     for (const user of this.users.values()) {
       const percent = quotaPercent(user);
       const before = this.saved.quotaAbove[user.username];
@@ -665,6 +686,10 @@ export class SftpgoHub {
   }
 
   async afterChanges({ publish = false } = {}) {
+    // Midnight passes while SFTPGo does not answer too.
+    if (this.rollDay()) {
+      this.store.save(this.saved);
+    }
     await this.publishDevices({ force: publish });
     await this.publishTransports();
     await this.publishConnectionStatus();

@@ -436,3 +436,57 @@ test('the internal timer reads SFTPGo at the interval of the configuration', asy
   }
   assert.equal(reads(), before + 1);
 });
+
+test('an empty event log at the first read: the first upload and failed login are announced', async (t) => {
+  const clock = createClock();
+  const sftpgo = new FakeSftpgo({ now: clock.now });
+  sftpgo.addUser('scanner');
+  const world = await createWorld({ clock, sftpgo });
+  t.after(() => world.app.stop());
+  clock.advance(MINUTE);
+  sftpgo.upload('scanner', '/first.pdf');
+  sftpgo.failLogin('scanner');
+  await world.hub.pollNow();
+  assert.equal(events(world, TRIGGERS.FILE_UPLOADED).length, 1);
+  assert.equal(events(world, TRIGGERS.LOGIN_FAILED).length, 1);
+});
+
+test('an event written late, older than one already read, is still announced once', async (t) => {
+  const world = await createWorld();
+  t.after(() => world.app.stop());
+  world.clock.advance(MINUTE);
+  world.sftpgo.upload('phone', '/newer.jpg');
+  await world.hub.pollNow();
+  // Stamped 10 seconds before the one read, written to the log after it.
+  world.sftpgo.upload('scanner', '/scans/late.pdf', { time: world.clock.time - 10_000 });
+  world.clock.advance(30_000);
+  await world.hub.pollNow();
+  await world.hub.pollNow();
+  assert.deepEqual(
+    events(world, TRIGGERS.FILE_UPLOADED).map((e) => e.data.path),
+    ['/newer.jpg', '/scans/late.pdf'],
+  );
+});
+
+test('a new quota threshold records the users above it without announcing them', async (t) => {
+  const world = await createWorld({ config: config({ quota_threshold: '90' }) });
+  t.after(() => world.app.stop());
+  world.sftpgo.setUsage('scanner', { usedSize: 9_200_000, usedFiles: 3 });
+  await world.hub.pollNow();
+  assert.equal(events(world, TRIGGERS.QUOTA_THRESHOLD).length, 1);
+  await world.fake.configUpdated(config({ quota_threshold: '95' }));
+  assert.equal(events(world, TRIGGERS.QUOTA_THRESHOLD).length, 1);
+  world.sftpgo.setUsage('scanner', { usedSize: 9_600_000, usedFiles: 3 });
+  await world.hub.pollNow();
+  assert.equal(events(world, TRIGGERS.QUOTA_THRESHOLD).length, 2);
+});
+
+test('the daily counts start again at midnight even while SFTPGo does not answer', async (t) => {
+  const world = await createWorld();
+  t.after(() => world.app.stop());
+  world.sftpgo.down = true;
+  world.clock.advance(14 * HOUR);
+  await world.hub.pollNow();
+  assert.equal(world.hub.saved.today.uploads, 0);
+  assert.equal(world.hub.saved.today.failedLogins, 0);
+});

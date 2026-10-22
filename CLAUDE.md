@@ -264,8 +264,10 @@ PostgreSQL 16 pour les plugins, dépôts en SFTP et WebDAV) :
   (« unsupported database driver ») : PostgreSQL ou MySQL obligatoires. Si la base n'est pas prête, SFTPGo
   s'arrête au démarrage.
 - `timestamp` des événements en **nanosecondes** (au-delà de 2^53 : JSON.parse arrondit à la centaine de ns).
-  Curseur gardé en millisecondes, relu avec 1 ms de recouvrement, les `id` déjà vus de cette milliseconde
-  écartés. `start_timestamp` est inclusif, `order=ASC|DESC`, `limit` ≤ 1000. Dépôt réussi : `status` 1
+  Curseur gardé en millisecondes ; chaque lecture **repart 30 s en arrière** et écarte les `id` déjà vus dans
+  cette fenêtre (gardés dans `/data`) : le plugin peut écrire un événement après un plus récent (envois
+  simultanés, écriture rejouée). Un journal vide à la première lecture pose un curseur à 0 (tout ce qui
+  arrive ensuite est nouveau, relevé par la relecture indépendante). `start_timestamp` est inclusif, `order=ASC|DESC`, `limit` ≤ 1000. Dépôt réussi : `status` 1
   (`statuses=1`), échec 2, quota dépassé 3. Échecs de connexion : `events=1,2` (mauvais identifiants,
   utilisateur inconnu).
 - Les règles d'événements de SFTPGo (action HTTP) ne peuvent pas joindre le conteneur (aucun port entrant) :

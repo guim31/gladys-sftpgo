@@ -67,6 +67,7 @@ export const PAGE_SIZE = 500;
 export const MAX_PAGES = 5;
 // A token is renewed this long before it expires.
 const TOKEN_MARGIN_MS = 120_000;
+const TOKEN_LIFETIME_MS = 20 * 60_000;
 
 /**
  * The one function that talks to the network. The client takes it as a
@@ -260,10 +261,16 @@ export class SftpgoClient {
     if (typeof data?.access_token !== 'string') {
       throw new SftpgoError(ERROR_KINDS.NOT_SFTPGO, 'The answer is not a token');
     }
+    // Lifetime 20 minutes: the clocks of SFTPGo and of the container may differ,
+    // the expiry it gives only shortens it.
     const expires = Date.parse(data.expires_at);
+    const max = this.now() + TOKEN_LIFETIME_MS;
     this.token = {
       value: data.access_token,
-      expiresAt: Number.isFinite(expires) ? expires : this.now() + 10 * 60_000,
+      expiresAt:
+        Number.isFinite(expires) && expires > this.now() + 2 * TOKEN_MARGIN_MS
+          ? Math.min(expires, max)
+          : max,
     };
   }
 
@@ -331,7 +338,7 @@ export class SftpgoClient {
 
   /**
    * Events of the log, oldest first, from `sinceMs` (included). `seen`: ids
-   * already handled, skipped (the cursor overlaps by one millisecond).
+   * already handled, skipped (the hub reads again the last 30 seconds).
    * @returns {Promise<{ state: string, events: object[], truncated?: boolean }>}
    */
   async events(kind, { sinceMs = 0, seen = new Set(), newest = false } = {}) {
