@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-22
+
 ### Added
 
 - SFTPGo in Gladys: a server device (online, uploads followed, connections,
@@ -25,4 +27,5 @@ the notes of the version's GitHub Release.
   minutes.
 - Texts and documentation in English, French, German and Spanish.
 
-[Unreleased]: https://github.com/guim31/gladys-sftpgo/commits/main
+[Unreleased]: https://github.com/guim31/gladys-sftpgo/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/guim31/gladys-sftpgo/releases/tag/v1.0.0
