@@ -30,6 +30,19 @@ Gladys before reporting a problem.
 
 In scope: the code of this repository and the Docker image it publishes.
 
+What the integration holds:
+
+- in the Gladys configuration: the address of SFTPGo and the API key or the
+  password of an SFTPGo admin (secret fields, never logged). An admin limited
+  to `view_users`, `view_conns` and `view_events` is enough: it cannot change
+  anything in SFTPGo;
+- in `/data/sftpgo-state.json`: the address of the server, the cursors of the
+  event log, the counts of the day, the last files uploaded (user, path, size,
+  time) and which users are above their quota threshold. No credentials;
+- on the network: requests to the SFTPGo REST API only, on the local network,
+  over HTTP or HTTPS. Redirects are not followed, so the credentials are never
+  sent to another host.
+
 Out of scope: Gladys Assistant itself (see its
 [security policy](https://github.com/GladysAssistant/Gladys/security/policy)),
-and the third-party services and devices the integration talks to.
+and SFTPGo and its plugins.

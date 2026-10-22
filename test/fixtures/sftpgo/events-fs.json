@@ -1,0 +1,62 @@
+[
+  {
+    "id": "dbd36ksbstus70l0lns0",
+    "timestamp": 1792684883503851748,
+    "action": "upload",
+    "username": "scanner",
+    "fs_path": "/srv/sftpgo/data/scanner/scan-001.pdf",
+    "virtual_path": "/scan-001.pdf",
+    "file_size": 3000000,
+    "elapsed": 35,
+    "status": 1,
+    "protocol": "SFTP",
+    "ip": "198.51.100.7",
+    "session_id": "SFTP_67bab71bc3ea9f4eef15fdfc3ba98f13efedef8234862236e8840edb725c754c_1",
+    "fs_provider": 0
+  },
+  {
+    "id": "dbd36ksbstus70l0lnt0",
+    "timestamp": 1792684883619394489,
+    "action": "upload",
+    "username": "scanner",
+    "fs_path": "/srv/sftpgo/data/scanner/docs/scan",
+    "virtual_path": "/docs/scan",
+    "file_size": 3000000,
+    "elapsed": 37,
+    "status": 1,
+    "protocol": "SFTP",
+    "ip": "198.51.100.7",
+    "session_id": "SFTP_67bab71bc3ea9f4eef15fdfc3ba98f13efedef8234862236e8840edb725c754c_1",
+    "fs_provider": 0
+  },
+  {
+    "id": "dbd36ksbstus70l0lnu0",
+    "timestamp": 1792684883776941862,
+    "action": "upload",
+    "username": "phone",
+    "fs_path": "/srv/sftpgo/data/phone/photo.jpg",
+    "virtual_path": "/photo.jpg",
+    "file_size": 3000000,
+    "elapsed": 5,
+    "status": 1,
+    "protocol": "DAV",
+    "ip": "198.51.100.7",
+    "session_id": "DAV_dbd36ksbstus7398der0",
+    "fs_provider": 0
+  },
+  {
+    "id": "dbd371sbstus70l0lo10",
+    "timestamp": 1792684935662005576,
+    "action": "upload",
+    "username": "phone",
+    "fs_path": "/srv/sftpgo/data/phone/slow.bin",
+    "virtual_path": "/slow.bin",
+    "file_size": 2000000,
+    "elapsed": 9001,
+    "status": 1,
+    "protocol": "DAV",
+    "ip": "198.51.100.7",
+    "session_id": "DAV_dbd36vkbstus7398devg",
+    "fs_provider": 0
+  }
+]

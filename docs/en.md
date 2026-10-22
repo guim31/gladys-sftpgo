@@ -1,61 +1,184 @@
-# Demo Devices Template
+# SFTPGo
 
-This is the user documentation of the integration. Gladys re-hosts this file
-and shows a permanent **Documentation** link to it in the Configuration screen
-(in the user's language, with English as the fallback) — it is when
-configuring that the user needs it most. Keep the short onboarding hints in
-the `section` blocks of the manifest `config_schema`; put the long
-step-by-step (screenshots, troubleshooting…) here.
+[SFTPGo](https://sftpgo.com/) is a free file server (SFTP, FTP/S, WebDAV and
+web) that many people run at home: a scanner sends its PDFs to it, a camera its
+pictures, a phone its photos. This integration brings an SFTPGo server into
+Gladys: the open connections, the users and their quotas, and above all a scene
+trigger **when a file is uploaded**, with its user, path, size and protocol. It
+also warns when a quota goes above a threshold or a login is refused, and a
+dashboard widget lists the last files uploaded.
 
-## What you get
+Tested against a real SFTPGo 2.7 (Docker images `drakkan/sftpgo` and
+`drakkan/sftpgo:plugins` with PostgreSQL): uploads over SFTP and WebDAV,
+quotas, failed logins, API key and admin password, with and without the event
+log. Not yet tested on a real Gladys: feedback welcome on
+[the issues](https://github.com/guim31/gladys-sftpgo/issues).
 
-Six demo devices show up after installation: a weather station (real data
-from Open-Meteo), a switch, a dimmable light, a smart plug with power
-metering, a motion sensor and a camera.
+## What you need
 
-## Configuration
+- Gladys Assistant 5.1.0 or later.
+- SFTPGo 2.x with its web server (port 8080 by default) reachable from the
+  Gladys machine: the integration uses its REST API (`/api/v2`).
+- An SFTPGo **admin** (not a user of the file server) with the `view_users`,
+  `view_conns` and `view_events` permissions: an admin dedicated to Gladys is
+  best. Either its API key, or its username and password.
+- For the uploads and the failed logins: the **event log** of SFTPGo, that is
+  its `eventstore` and `eventsearch` plugins (see below). Without it, the
+  connections, users and quotas work, but not the uploads.
 
-1. Open the **Configuration** tab of the integration.
-2. Set the **latitude** and **longitude** the demo weather station should
-   observe (they default to Paris), and pick your temperature unit.
-   The **refresh interval** sets how often the weather station and the
-   plug's power are read: every 5 minutes by default, every minute at most.
-3. Save: the devices appear in the **Discovery** tab, ready to be added.
+The integration reads SFTPGo every 30 seconds by default: a handful of light
+requests on your own network.
 
-The **Prefer the local connection** toggle drives the demo plug: it reports
-the channel it actually uses as a badge (local or cloud), with an orange dot
-when it runs degraded (local refused, cloud fallback).
+## Getting started
 
-## Actions
+### 1. Create an admin for Gladys
 
-- **Test the weather provider** — performs a live request to Open-Meteo and
-  shows the current temperature and humidity under the button.
-- **Identify a device** — pick one of your devices in the list and it will
-  signal itself (the demo light "blinks" in the logs).
+In the SFTPGo web admin, **Admins → Add**: a username, a password, and the
+permissions `view_users`, `view_conns` and `view_events` only. To use an API
+key instead, tick "API key authentication" in the profile of this admin, then
+create a key in **API keys** (scope "Admin").
 
-## Scenes
+### 2. Turn on the event log (for the uploads)
 
-The integration adds its own cards to the scene editor (Gladys 5.1 or
-later), under the **Integrations** category:
+The uploads come from the event log of SFTPGo, written and read by two plugins
+shipped in the `drakkan/sftpgo:plugins` image. They need a PostgreSQL or MySQL
+database (SQLite is not supported by the plugins). With Docker Compose, add to
+the `environment` of SFTPGo:
 
-- **Motion detected** (trigger) — starts the scene when a demo motion sensor
-  sees something move. Optionally pick the sensor and what moved (person,
-  animal); left empty, any detection matches. The following actions can
-  read what moved with `{{triggerEvent.data.target}}`.
-- **Identify a device** (action) — makes the chosen device signal itself.
-  It returns whether the device could signal itself, so the following
-  actions can depend on it.
+```
+SFTPGO_PLUGINS__0__TYPE: notifier
+SFTPGO_PLUGINS__0__NOTIFIER_OPTIONS__FS_EVENTS: upload
+SFTPGO_PLUGINS__0__NOTIFIER_OPTIONS__LOG_EVENTS: 1,2
+SFTPGO_PLUGINS__0__CMD: /usr/local/bin/sftpgo-plugin-eventstore
+SFTPGO_PLUGINS__0__ARGS: serve
+SFTPGO_PLUGINS__0__AUTO_MTLS: "1"
+SFTPGO_PLUGIN_EVENTSTORE_DRIVER: postgres
+SFTPGO_PLUGIN_EVENTSTORE_DSN: "host=db user=sftpgo password=… dbname=sftpgo_events sslmode=disable"
+SFTPGO_PLUGIN_EVENTSTORE_RETENTION: "720"
+SFTPGO_PLUGINS__1__TYPE: eventsearcher
+SFTPGO_PLUGINS__1__CMD: /usr/local/bin/sftpgo-plugin-eventsearch
+SFTPGO_PLUGINS__1__ARGS: serve
+SFTPGO_PLUGINS__1__AUTO_MTLS: "1"
+SFTPGO_PLUGIN_EVENTSEARCH_DRIVER: postgres
+SFTPGO_PLUGIN_EVENTSEARCH_DSN: "host=db user=sftpgo password=… dbname=sftpgo_events sslmode=disable"
+```
+
+`FS_EVENTS: upload` records the uploads, `LOG_EVENTS: 1,2` the refused logins
+(wrong password, unknown user); `RETENTION` keeps 30 days. Without these
+plugins, SFTPGo answers "no events searcher plugin defined" and the
+integration says so in its status and widget; it asks again every hour.
+
+### 3. Configure the integration
+
+In **Integrations → SFTPGo → Configuration**:
+
+- **SFTPGo address**: the address of the web interface, e.g.
+  `http://192.168.1.2:8080` (an address copied from the browser works too).
+- **Admin API key**, or **Admin username** and **Admin password**.
+- **Refresh interval**: 10 seconds to 5 minutes. It is also the delay of the
+  scene on a file uploaded.
+- **Quota alert threshold**: 70 to 95 %.
+- **Language of the names**: the language of the feature names and of the
+  texts sent by the integration (French by default).
+
+**Test the connection** answers, for example, "SFTPGo: connected (2.7.6), 3
+user(s), 1 connection(s), uploads followed".
+
+### 4. Add the devices
+
+In the **Discover** tab, add the server and the users to follow. The scene
+triggers work for every user, added or not.
+
+## The devices
+
+**SFTPGo** (the server):
+
+| Feature                  | Meaning                                   |
+| ------------------------ | ----------------------------------------- |
+| **Online**               | 1 while SFTPGo answers                    |
+| **Uploads followed**     | 1 when the event log answers              |
+| **Connections**          | open connections (SFTP, FTP, WebDAV, web) |
+| **Transfers running**    | uploads and downloads in progress         |
+| **Users**                | users of the server                       |
+| **Files uploaded today** | files uploaded since midnight (event log) |
+| **Failed logins today**  | refused logins since midnight (event log) |
+
+**SFTPGo &lt;user&gt;** (one per user):
+
+| Feature                  | Meaning                                        |
+| ------------------------ | ---------------------------------------------- |
+| **Size quota used**      | % of its size quota, 0 without size quota      |
+| **Files quota used**     | % of its files quota, 0 without files quota    |
+| **Space used**           | MB, when SFTPGo tracks the quota of the user   |
+| **Files**                | files, same condition                          |
+| **Connections**          | its open connections                           |
+| **Files uploaded today** | its uploads since midnight (event log)         |
+| **Last file uploaded**   | the path of its last file uploaded (event log) |
+| **Last upload time**     | day/month hours:minutes of it (event log)      |
+
+By default SFTPGo only tracks the space and files of the users that have a
+quota (`track_quota` 2): the other users have no **Space used** nor **Files**.
 
 ## Dashboard
 
-Add the **Demo status** widget to a dashboard: it shows the live
-temperature of the weather station and the power of the office plug, the
-connection the plug currently uses (orange when degraded) and the observed
-location. Its **Identify the light** button makes the demo light signal
-itself.
+The **SFTPGo uploads** widget shows three tiles (files uploaded today,
+connections, refused logins of the day), then the last eight files uploaded,
+newest first, with their user and time. Its settings choose the users shown
+(empty: all). The **Refresh** button reads SFTPGo again.
+
+## Scenes
+
+### Triggers
+
+- **A file is uploaded**: a user uploads a file, over any protocol. Filters:
+  users, folder (exactly, e.g. `/scans`), extension (`pdf`). Variables: user,
+  path, folder, file name, extension, size, size in bytes, protocol, client
+  address. Twenty uploads at most are announced per reading: a folder of 500
+  photos does not start 500 scenes.
+- **A quota goes above the threshold**: a user goes above the threshold of the
+  configuration (the size or the files quota). Once, then again only after the
+  usage went 5 points below the threshold.
+- **A login is refused**: wrong password or unknown user. One event per user
+  and address at each reading, with the number of attempts.
+
+### Actions
+
+- **State of a user**: reads the quota, the space used, the connections, the
+  files uploaded today and the last file of a user, and a ready-made sentence:
+  "scanner: quota 42 % used, last file /scans/invoice.pdf on 22/10, 08:12."
+
+### Scene ideas
+
+- A file is uploaded, folder `/scans`, extension `pdf` → send "New scan:
+  {{triggerEvent.data.file_name}}" on Telegram.
+- A file is uploaded by the user "camera" → turn the hall light on and send a
+  message.
+- A login is refused → notify with the address and the number of attempts.
+- Every Sunday, State of a user → send the sentence.
 
 ## Troubleshooting
 
-The integration logs everything it does: check the integration logs from the
-Gladys UI (or `docker logs` on the host) with `LOG_LEVEL=debug` for the full
-detail.
+- **"SFTPGo does not answer"**: check the address and the port of the web
+  interface (8080 by default), from the Gladys machine.
+- **"API key, username or password refused by SFTPGo"**: the credentials of
+  an admin, not of a user. An API key needs "API key authentication" ticked in
+  the admin profile.
+- **"the admin needs the view_users and view_conns permissions"**: give them
+  to the admin of the integration.
+- **No upload seen**: open **Test the connection**. "No event log" means the
+  plugins are missing (step 2); "view_events" means the admin lacks this
+  permission. The uploads seen before the integration started are not
+  announced, only counted.
+- **No Space used for a user**: SFTPGo does not track its quota; give it a
+  quota, or set `SFTPGO_DATA_PROVIDER__TRACK_QUOTA=1`.
+- Logs: `LOG_LEVEL=debug` shows every reading and every upload.
+
+## Limits
+
+- No upload is seen without the event log plugins. The integration cannot
+  receive the HTTP actions of SFTPGo's event rules: it has no open port.
+- An upload is announced at the next reading (30 seconds by default).
+- Read only: the integration changes nothing in SFTPGo.
+- One SFTPGo server per integration; up to 2,500 users.
+- Developed and tested with a real SFTPGo in Docker, not yet on every setup:
+  feedback welcome.
