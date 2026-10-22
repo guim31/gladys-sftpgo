@@ -1,0 +1,196 @@
+# SFTPGo
+
+[SFTPGo](https://sftpgo.com/) ist ein freier Dateiserver (SFTP, FTP/S, WebDAV
+und Web), den viele zu Hause betreiben: Ein Scanner schickt seine PDFs dorthin,
+eine Kamera ihre Bilder, ein Handy seine Fotos. Diese Integration bringt einen
+SFTPGo-Server in Gladys: die offenen Verbindungen, die Benutzer und ihre
+Kontingente, und vor allem einen Szenen-Auslöser, **wenn eine Datei hochgeladen
+wird**, mit Benutzer, Pfad, Größe und Protokoll. Außerdem warnt die Integration, wenn ein
+Kontingent eine Schwelle überschreitet oder eine Anmeldung abgelehnt wird, und
+ein Dashboard-Widget listet die zuletzt hochgeladenen Dateien.
+
+Getestet mit einem echten SFTPGo 2.7 (Docker-Images `drakkan/sftpgo` und
+`drakkan/sftpgo:plugins` mit PostgreSQL): Uploads über SFTP und WebDAV,
+Kontingente, abgelehnte Anmeldungen, API-Schlüssel und Admin-Passwort, mit und
+ohne Ereignisprotokoll. Noch nicht mit einem echten Gladys getestet: Rückmeldungen
+gern in [den Issues](https://github.com/guim31/gladys-sftpgo/issues).
+
+## Was du brauchst
+
+- Gladys Assistant 5.1.0 oder neuer.
+- SFTPGo 2.x mit seinem Webserver (standardmäßig Port 8080), vom Gladys-Rechner
+  aus erreichbar: Die Integration nutzt seine REST-API (`/api/v2`).
+- Einen SFTPGo-**Admin** (keinen Benutzer des Dateiservers) mit den
+  Berechtigungen `view_users`, `view_conns` und `view_events`: am besten einen
+  eigenen Admin für Gladys. Entweder seinen API-Schlüssel oder seinen
+  Benutzernamen und sein Passwort.
+- Für Uploads und abgelehnte Anmeldungen: das **Ereignisprotokoll** von
+  SFTPGo, also seine Plugins `eventstore` und `eventsearch` (siehe unten). Ohne
+  es funktionieren Verbindungen, Benutzer und Kontingente, aber keine Uploads.
+
+Die Integration liest SFTPGo standardmäßig alle 30 Sekunden: ein paar leichte
+Anfragen in deinem eigenen Netz.
+
+## Erste Schritte
+
+### 1. Einen Admin für Gladys anlegen
+
+In der Web-Administration von SFTPGo, **Admins → Add**: ein Benutzername, ein
+Passwort und nur die Berechtigungen `view_users`, `view_conns` und
+`view_events`. Für einen API-Schlüssel stattdessen „API key authentication“ im
+Profil dieses Admins anhaken und dann unter **API keys** einen Schlüssel
+anlegen (Bereich „Admin“).
+
+### 2. Das Ereignisprotokoll einschalten (für die Uploads)
+
+Die Uploads kommen aus dem Ereignisprotokoll von SFTPGo, geschrieben und
+gelesen von zwei Plugins aus dem Image `drakkan/sftpgo:plugins`. Diese brauchen
+eine PostgreSQL- oder MySQL-Datenbank (SQLite unterstützen die Plugins nicht).
+Mit Docker Compose ergänzt du das `environment` von SFTPGo:
+
+```
+SFTPGO_PLUGINS__0__TYPE: notifier
+SFTPGO_PLUGINS__0__NOTIFIER_OPTIONS__FS_EVENTS: upload
+SFTPGO_PLUGINS__0__NOTIFIER_OPTIONS__LOG_EVENTS: 1,2
+SFTPGO_PLUGINS__0__CMD: /usr/local/bin/sftpgo-plugin-eventstore
+SFTPGO_PLUGINS__0__ARGS: serve
+SFTPGO_PLUGINS__0__AUTO_MTLS: "1"
+SFTPGO_PLUGIN_EVENTSTORE_DRIVER: postgres
+SFTPGO_PLUGIN_EVENTSTORE_DSN: "host=db user=sftpgo password=… dbname=sftpgo_events sslmode=disable"
+SFTPGO_PLUGIN_EVENTSTORE_RETENTION: "720"
+SFTPGO_PLUGINS__1__TYPE: eventsearcher
+SFTPGO_PLUGINS__1__CMD: /usr/local/bin/sftpgo-plugin-eventsearch
+SFTPGO_PLUGINS__1__ARGS: serve
+SFTPGO_PLUGINS__1__AUTO_MTLS: "1"
+SFTPGO_PLUGIN_EVENTSEARCH_DRIVER: postgres
+SFTPGO_PLUGIN_EVENTSEARCH_DSN: "host=db user=sftpgo password=… dbname=sftpgo_events sslmode=disable"
+```
+
+`FS_EVENTS: upload` speichert die Uploads, `LOG_EVENTS: 1,2` die abgelehnten
+Anmeldungen (falsches Passwort, unbekannter Benutzer); `RETENTION` behält 30
+Tage. Ohne diese Plugins antwortet SFTPGo „no events searcher plugin defined“,
+und die Integration zeigt das in ihrem Status und Widget; sie fragt jede Stunde
+erneut.
+
+### 3. Die Integration konfigurieren
+
+Unter **Integrationen → SFTPGo → Konfiguration**:
+
+- **SFTPGo-Adresse**: die Adresse der Weboberfläche, z. B.
+  `http://192.168.1.2:8080` (eine aus dem Browser kopierte Adresse geht auch).
+- **Admin-API-Schlüssel** oder **Admin-Benutzername** und **Admin-Passwort**.
+- **Aktualisierungsintervall**: 10 Sekunden bis 5 Minuten. Es ist auch die
+  Verzögerung der Szene bei einer hochgeladenen Datei.
+- **Kontingent-Warnschwelle**: 70 bis 95 %.
+- **Sprache der Namen**: die Sprache der Funktionsnamen und der Texte der
+  Integration (standardmäßig Französisch).
+
+**Verbindung testen** antwortet zum Beispiel „SFTPGo: verbunden (2.7.6), 3
+Benutzer, 1 Verbindung(en), Uploads werden verfolgt“.
+
+### 4. Die Geräte anlegen
+
+Lege im Tab **Entdecken** den Server und die Benutzer an, die du verfolgen
+willst. Die Szenen-Auslöser funktionieren für alle Benutzer, angelegt oder
+nicht.
+
+## Die Geräte
+
+**SFTPGo** (der Server):
+
+| Funktion                         | Bedeutung                                           |
+| -------------------------------- | --------------------------------------------------- |
+| **Online**                       | 1, solange SFTPGo antwortet                         |
+| **Uploads verfolgt**             | 1, wenn das Ereignisprotokoll antwortet             |
+| **Verbindungen**                 | offene Verbindungen (SFTP, FTP, WebDAV, Web)        |
+| **Laufende Übertragungen**       | laufende Uploads und Downloads                      |
+| **Benutzer**                     | Benutzer des Servers                                |
+| **Heute hochgeladene Dateien**   | seit Mitternacht hochgeladene Dateien (Protokoll)   |
+| **Heute abgelehnte Anmeldungen** | seit Mitternacht abgelehnte Anmeldungen (Protokoll) |
+
+**SFTPGo &lt;Benutzer&gt;** (einer pro Benutzer):
+
+| Funktion                       | Bedeutung                                             |
+| ------------------------------ | ----------------------------------------------------- |
+| **Belegtes Größenkontingent**  | % seines Größenkontingents, 0 ohne Größenkontingent   |
+| **Belegtes Dateikontingent**   | % seines Dateikontingents, 0 ohne Dateikontingent     |
+| **Belegter Speicher**          | MB, wenn SFTPGo das Kontingent des Benutzers verfolgt |
+| **Dateien**                    | Dateien, gleiche Bedingung                            |
+| **Verbindungen**               | seine offenen Verbindungen                            |
+| **Heute hochgeladene Dateien** | seine Uploads seit Mitternacht (Protokoll)            |
+| **Zuletzt hochgeladene Datei** | Pfad seiner zuletzt hochgeladenen Datei (Protokoll)   |
+| **Zeit des letzten Uploads**   | Tag/Monat Stunden:Minuten dieses Uploads (Protokoll)  |
+
+Standardmäßig verfolgt SFTPGo Speicher und Dateien nur bei Benutzern mit
+Kontingent (`track_quota` 2): Die anderen haben weder **Belegter Speicher**
+noch **Dateien**.
+
+## Dashboard
+
+Das Widget **SFTPGo-Uploads** zeigt drei Kacheln (heute hochgeladene Dateien,
+Verbindungen, abgelehnte Anmeldungen des Tages) und dann die acht zuletzt
+hochgeladenen Dateien, die neueste zuerst, mit Benutzer und Uhrzeit. In seinen
+Einstellungen wählst du die gezeigten Benutzer (leer: alle). Der Button
+**Aktualisieren** liest SFTPGo neu.
+
+## Szenen
+
+### Auslöser
+
+- **Eine Datei wird hochgeladen**: Ein Benutzer lädt eine Datei hoch, über
+  jedes Protokoll. Filter: Benutzer, Ordner (genau, z. B. `/scans`), Endung
+  (`pdf`). Variablen: Benutzer, Pfad, Ordner, Dateiname, Endung, Größe, Größe
+  in Bytes, Protokoll, Client-Adresse. Höchstens zwanzig Uploads werden pro
+  Lesen gemeldet: Ein Ordner mit 500 Fotos startet nicht 500 Szenen.
+- **Ein Kontingent überschreitet die Schwelle**: Ein Benutzer überschreitet die
+  Schwelle der Konfiguration (Größen- oder Dateikontingent). Einmal, dann erst
+  wieder, wenn die Nutzung 5 Punkte unter die Schwelle gesunken ist.
+- **Eine Anmeldung wird abgelehnt**: falsches Passwort oder unbekannter
+  Benutzer. Ein Ereignis pro Benutzer und Adresse bei jedem Lesen, mit der Zahl
+  der Versuche.
+
+### Aktionen
+
+- **Zustand eines Benutzers**: liest Kontingent, belegten Speicher,
+  Verbindungen, heute hochgeladene Dateien und die letzte Datei eines
+  Benutzers, und einen fertigen Satz: „scanner: Kontingent zu 42 % belegt,
+  letzte Datei /scans/rechnung.pdf am 22.10., 08:12.“
+
+### Szenen-Ideen
+
+- Eine Datei wird hochgeladen, Ordner `/scans`, Endung `pdf` → „Neuer Scan:
+  {{triggerEvent.data.file_name}}“ per Telegram senden.
+- Eine Datei wird vom Benutzer „camera“ hochgeladen → das Licht im Flur
+  einschalten und eine Nachricht senden.
+- Eine Anmeldung wird abgelehnt → mit Adresse und Zahl der Versuche
+  benachrichtigen.
+- Jeden Sonntag Zustand eines Benutzers → den Satz senden.
+
+## Fehlerbehebung
+
+- **„SFTPGo antwortet nicht“**: Prüfe Adresse und Port der Weboberfläche
+  (standardmäßig 8080), vom Gladys-Rechner aus.
+- **„API-Schlüssel, Benutzername oder Passwort von SFTPGo abgelehnt“**: Es
+  braucht die Zugangsdaten eines Admins, nicht eines Benutzers. Ein
+  API-Schlüssel braucht „API key authentication“ im Admin-Profil.
+- **„der Admin braucht die Berechtigungen view_users und view_conns“**: Gib sie
+  dem Admin der Integration.
+- **Kein Upload zu sehen**: Starte **Verbindung testen**. „kein
+  Ereignisprotokoll“ heißt, dass die Plugins fehlen (Schritt 2); „view_events“,
+  dass dem Admin diese Berechtigung fehlt. Uploads von vor dem Start der
+  Integration werden nicht gemeldet, nur gezählt.
+- **Kein Belegter Speicher bei einem Benutzer**: SFTPGo verfolgt sein
+  Kontingent nicht; gib ihm ein Kontingent oder setze
+  `SFTPGO_DATA_PROVIDER__TRACK_QUOTA=1`.
+- Protokolle: `LOG_LEVEL=debug` zeigt jedes Lesen und jeden Upload.
+
+## Grenzen
+
+- Ohne die Plugins des Ereignisprotokolls ist kein Upload zu sehen. Die
+  Integration kann die HTTP-Aktionen der Ereignisregeln von SFTPGo nicht
+  empfangen: Es gibt keinen offenen Port.
+- Ein Upload wird beim nächsten Lesen gemeldet (standardmäßig 30 Sekunden).
+- Nur lesend: Die Integration ändert nichts in SFTPGo.
+- Ein SFTPGo-Server pro Integration; bis zu 2.500 Benutzer.
+- Entwickelt und getestet mit einem echten SFTPGo in Docker, noch nicht mit
+  jeder Installation: Rückmeldungen willkommen.

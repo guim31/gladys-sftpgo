@@ -1,0 +1,91 @@
+[
+  {
+    "id": 2,
+    "status": 1,
+    "username": "phone",
+    "has_password": true,
+    "home_dir": "/srv/sftpgo/data/phone",
+    "uid": 0,
+    "gid": 0,
+    "max_sessions": 0,
+    "quota_size": 0,
+    "quota_files": 0,
+    "permissions": {
+      "/": ["*"]
+    },
+    "upload_data_transfer": 0,
+    "download_data_transfer": 0,
+    "total_data_transfer": 0,
+    "last_login": 1792684883726,
+    "created_at": 1792684883208,
+    "updated_at": 1792684883208,
+    "first_upload": 1792684883776,
+    "last_password_change": 1792684883207,
+    "filters": {
+      "hooks": {
+        "external_auth_disabled": false,
+        "pre_login_disabled": false,
+        "check_password_disabled": false
+      },
+      "totp_config": {
+        "secret": {}
+      }
+    },
+    "filesystem": {
+      "provider": 0,
+      "osconfig": {},
+      "s3config": {},
+      "gcsconfig": {},
+      "azblobconfig": {},
+      "cryptconfig": {},
+      "sftpconfig": {},
+      "httpconfig": {}
+    }
+  },
+  {
+    "id": 1,
+    "status": 1,
+    "username": "scanner",
+    "has_password": true,
+    "home_dir": "/srv/sftpgo/data/scanner",
+    "uid": 0,
+    "gid": 0,
+    "max_sessions": 0,
+    "quota_size": 10485760,
+    "quota_files": 100,
+    "permissions": {
+      "/": ["*"]
+    },
+    "used_quota_size": 6000000,
+    "used_quota_files": 2,
+    "last_quota_update": 1792684883619,
+    "upload_data_transfer": 0,
+    "download_data_transfer": 0,
+    "total_data_transfer": 0,
+    "last_login": 1792684883410,
+    "created_at": 1792684883102,
+    "updated_at": 1792684883102,
+    "first_upload": 1792684883539,
+    "last_password_change": 1792684883102,
+    "filters": {
+      "hooks": {
+        "external_auth_disabled": false,
+        "pre_login_disabled": false,
+        "check_password_disabled": false
+      },
+      "totp_config": {
+        "secret": {}
+      }
+    },
+    "filesystem": {
+      "provider": 0,
+      "osconfig": {},
+      "s3config": {},
+      "gcsconfig": {},
+      "azblobconfig": {},
+      "cryptconfig": {},
+      "sftpconfig": {},
+      "httpconfig": {}
+    }
+  }
+]

@@ -31,16 +31,21 @@ pushing.
 ## Architecture
 
 ```
-index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
-src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
+index.js                          SDK wiring only (src/app.js), shutdown
+src/app.js                        every SDK handler registered on the hub (the tests use it too)
+src/hub.js                        reading timer, event-log cursors, states, scene events, transports, status
+src/sftpgo/client.js              SFTPGo REST API: token or API key, users, connections, /events/fs, /events/logs
+src/devices.js                    device blueprints, feature names (4 languages), states
+src/scenes.js                     scene action handler (manifest `scene_actions`)
+src/widgets.js                    dashboard widget (manifest `widgets`)
+src/texts.js                      every text sent to Gladys outside the widget, 4 languages
+src/store.js                      /data/sftpgo-state.json: cursors, counts of the day, last uploads, quotas
+src/problems.js                   one log line when a repeated failure starts, one when it ends
 src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
 gladys-assistant-integration.json manifest: name, config_schema, actions, image...
-docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
-test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
+docs/{en,fr,de,es}.md             user documentation, re-hosted by Gladys (mandatory, same sections)
+test/                             node --test, against the SDK's fake Gladys and test/helpers/fakeSftpgo.js
+test/fixtures/sftpgo/             real answers of SFTPGo 2.7.6 (Docker), anonymized
 .github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
 ```
 
@@ -70,8 +75,9 @@ test/                             node --test, against the SDK's fake Gladys (in
   `type: "provider"`: 5.1.0). `test/manifest.test.js` ties the manifest to the
   code (defaults, action, scene and widget handlers): change both sides
   together.
-- **User-facing text** is bilingual (English and French): action messages,
-  manifest texts, and `docs/en.md` / `docs/fr.md`, kept in sync.
+- **User-facing text** exists in English, French, German ("du") and Spanish
+  ("usted"): action messages, manifest texts, widget, feature names, and
+  `docs/{en,fr,de,es}.md`, kept in sync. `test/i18n.test.js` checks it.
 - **Style.** Prettier formats, ESLint catches mistakes. Comments explain why,
   in English. Tests never touch the network.
 
@@ -233,3 +239,36 @@ long, et sur un « Sie »/« Ihr… » de politesse en allemand. Le store exige 
 - Docs `en`, `fr`, `de`, `es` avec les mêmes sections.
 - Chauffe, ouverture, sécurité : ne rien rendre pilotable « comme un thermostat » ou par un assistant
   vocal quand une erreur serait dangereuse (leçon d'OctoPrint).
+
+## SFTPGo (propre à ce dépôt)
+
+Vérifié sur un vrai **SFTPGo 2.7.6** (images `drakkan/sftpgo` et `drakkan/sftpgo:plugins`, le 22/10/2026,
+PostgreSQL 16 pour les plugins, dépôts en SFTP et WebDAV) :
+
+- **Authentification** : `GET /api/v2/token` en Basic (admin) → `{ access_token, expires_at }`, JWT de
+  **20 minutes** ; renouvelé 2 min avant, et une fois sur un 401 (SFTPGo redémarré). Mauvais identifiants :
+  401 `invalid credentials`. Clé d'API : en-tête `X-SFTPGO-API-KEY`, l'admin doit avoir coché « API key
+  authentication » (`filters.allow_api_key_auth`) ; une clé inconnue répond **400** (pas 401)
+  `the provided api key is not valid`. Permission manquante : 403 `Forbidden`.
+- Permissions suffisantes : `view_users`, `view_conns`, `view_events` (vérifié avec un admin limité).
+- `GET /users` : **les zéros sont omis** (`used_quota_size`, `used_quota_files`, `last_login`…). Par défaut
+  (`data_provider.track_quota` = 2), SFTPGo ne compte l'espace et les fichiers **que des utilisateurs qui ont
+  un quota** : sans quota, pas d'« Espace utilisé » publié (inconnu, pas 0). Pas de date de dernier dépôt
+  dans l'utilisateur (seulement `first_upload`).
+- `GET /connections` : `active_transfers[]` (`operation_type`, `path`, `size`) seulement pendant le
+  transfert : inutilisable pour voir un dépôt (un fichier de quelques Mo passe en moins d'une seconde).
+- **Journal d'événements** : sans plugin `eventsearcher` (image standard), `/events/fs` et `/events/logs`
+  répondent **501** « no events searcher plugin defined ». Les plugins `sftpgo-plugin-eventstore` (notifier)
+  et `sftpgo-plugin-eventsearch` sont dans l'image `:plugins`, configurés par les variables
+  `SFTPGO_PLUGINS__N__*` et `SFTPGO_PLUGIN_EVENTSTORE_DRIVER` / `_DSN`. Les plugins **refusent `sqlite`**
+  (« unsupported database driver ») : PostgreSQL ou MySQL obligatoires. Si la base n'est pas prête, SFTPGo
+  s'arrête au démarrage.
+- `timestamp` des événements en **nanosecondes** (au-delà de 2^53 : JSON.parse arrondit à la centaine de ns).
+  Curseur gardé en millisecondes ; chaque lecture **repart 30 s en arrière** et écarte les `id` déjà vus dans
+  cette fenêtre (gardés dans `/data`) : le plugin peut écrire un événement après un plus récent (envois
+  simultanés, écriture rejouée). Un journal vide à la première lecture pose un curseur à 0 (tout ce qui
+  arrive ensuite est nouveau, relevé par la relecture indépendante). `start_timestamp` est inclusif, `order=ASC|DESC`, `limit` ≤ 1000. Dépôt réussi : `status` 1
+  (`statuses=1`), échec 2, quota dépassé 3. Échecs de connexion : `events=1,2` (mauvais identifiants,
+  utilisateur inconnu).
+- Les règles d'événements de SFTPGo (action HTTP) ne peuvent pas joindre le conteneur (aucun port entrant) :
+  le journal est la seule voie.

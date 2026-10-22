@@ -1,41 +1,39 @@
 // -----------------------------------------------------------------------------
-// Scene actions (SDK v0.14+, Gladys 5.1+).
+// Scene action handlers (manifest `scene_actions`, Gladys 5.1+).
 //
-// A scene action is an OPERATION a scene author places in a scene, with
-// parameters and a result: "identify this device", "take a snapshot", "clean
-// these rooms". Each one is declared in the manifest `scene_actions` field
-// (key, label, `fields` in the config_schema grammar, scalar `outputs`) and
-// handled here, keyed by that same `key`; index.js registers every entry with
-// `gladys.onSceneAction(key, ...)`.
-//
-// Scene TRIGGERS are the other direction ("this happened"): they are fired by
-// the device that observes the event, see src/devices/motionSensor.js.
-//
-// The rules that matter:
-//   - `fields` arrive RESOLVED: scene variables substituted, defaults applied,
-//     validated by the core; a `"source": "devices"` field is the chosen
-//     device external_id;
-//   - resolve an object of the declared `outputs` (scalars only), readable by
-//     the following actions of the scene, or `undefined` for none. Keys not
-//     declared in the manifest are dropped by the core;
-//   - throwing fails THIS action only: the scene logs it and continues. A
-//     scene action is never a condition: return an output and let the scene
-//     author gate on it;
-//   - never fire a scene event as a consequence of a received action: a scene
-//     bound to that event would loop through the integration.
+// "Is the quota above 90 %?" is already a scene condition on the device
+// features, for the users added to Gladys. The reading action is about what a
+// condition cannot do: put the state in a message ("scanner: quota 42 % used,
+// last file /scans/invoice.pdf on 22/10 08:12"). It reads SFTPGo again when
+// the last read is older than 15 seconds.
 // -----------------------------------------------------------------------------
 
-import { createLogger } from '@gladysassistant/integration-sdk';
-import { signalDevice } from './devices/index.js';
-
-const logger = createLogger({ name: 'scenes' });
+import { quotaPercent } from './devices.js';
+import { SENTENCE_TEXT, formatBytes, formatTime, labelled } from './texts.js';
 
 export const SCENE_ACTIONS = {
-  // The ack is awaited under the action's `timeout_seconds` (15 s in the
-  // manifest), counted from the moment the scene reaches the action.
-  async identify_device(gladys, { fields, config }) {
-    logger.info(`Scene action identify_device <- ${fields.device}`);
-    const signalled = await signalDevice(gladys, fields.device, config);
-    return { signalled };
+  async get_user_status(hub, { fields = {} }) {
+    const user = await hub.userOf(fields.device);
+    const language = hub.config.language;
+    const words = SENTENCE_TEXT[language] ?? SENTENCE_TEXT.en;
+    const context = hub.userContext(user.username);
+    const percent = quotaPercent(user);
+    const last = context.last;
+    const lastTime = last ? formatTime(last.time, language) : '';
+    const parts = [
+      percent === null ? words.noQuota : words.quota(percent),
+      last ? words.lastUpload(last.path, lastTime) : words.noUpload,
+    ];
+    return {
+      user: user.username,
+      quota_percent: percent ?? -1,
+      used_size: user.quotaTracked ? formatBytes(user.usedSize) : '',
+      files: user.quotaTracked ? user.usedFiles : -1,
+      connections: context.connections.filter((c) => c.username === user.username).length,
+      uploads_today: context.eventLog ? context.uploadsToday : -1,
+      last_upload: last?.path ?? '',
+      last_upload_time: lastTime,
+      sentence: `${labelled(user.username, parts.join(', '), language)}.`,
+    };
   },
 };

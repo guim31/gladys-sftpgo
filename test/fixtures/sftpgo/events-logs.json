@@ -1,0 +1,29 @@
+[
+  {
+    "id": "dbd36ksbstus70l0lnug",
+    "timestamp": 1792684883827347944,
+    "event": 1,
+    "protocol": "DAV",
+    "username": "phone",
+    "ip": "198.51.100.7",
+    "message": "invalid credentials"
+  },
+  {
+    "id": "dbd36ksbstus70l0lnv0",
+    "timestamp": 1792684883904381538,
+    "event": 1,
+    "protocol": "SSH",
+    "username": "scanner",
+    "ip": "198.51.100.7",
+    "message": "invalid credentials"
+  },
+  {
+    "id": "dbd36ksbstus70l0lnvg",
+    "timestamp": 1792684883905744504,
+    "event": 1,
+    "protocol": "SSH",
+    "username": "scanner",
+    "ip": "198.51.100.7",
+    "message": "credentials cannot be null or empty"
+  }
+]

@@ -1,8 +1,8 @@
 {
-  "name": "gladys-integration-template-js",
+  "name": "gladys-sftpgo",
   "version": "1.0.0",
   "private": true,
-  "description": "Official starter template to build an external integration for Gladys Assistant with the JavaScript SDK.",
+  "description": "SFTPGo file server in Gladys Assistant: connections, users, quotas, and a scene trigger on every file uploaded.",
   "type": "module",
   "main": "index.js",
   "scripts": {

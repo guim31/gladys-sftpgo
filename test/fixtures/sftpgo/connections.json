@@ -1,0 +1,31 @@
+[
+  {
+    "username": "phone",
+    "connection_id": "DAV_dbd37csbstus7398df3g",
+    "client_version": "curl/8.22.0",
+    "remote_address": "198.51.100.7:45806",
+    "connection_time": 1792684979922,
+    "last_activity": 1792684981923,
+    "current_time": 1792684981925,
+    "protocol": "DAV",
+    "active_transfers": [
+      {
+        "operation_type": "upload",
+        "start_time": 1792684979922,
+        "size": 307200,
+        "path": "/slow.bin"
+      }
+    ],
+    "command": "PUT"
+  },
+  {
+    "username": "scanner",
+    "connection_id": "SFTP_225cc3850e06c03f84c7465945cb5c35e3cde5751e227cdb71cc09ded5324ba0_1",
+    "client_version": "SSH-2.0-OpenSSH_10.3",
+    "remote_address": "198.51.100.7:41514",
+    "connection_time": 1792684980019,
+    "last_activity": 1792684980019,
+    "current_time": 1792684981925,
+    "protocol": "SFTP"
+  }
+]
