@@ -1,6 +1,6 @@
 {
   "name": "gladys-sftpgo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "SFTPGo file server in Gladys Assistant: connections, users, quotas, and a scene trigger on every file uploaded.",
   "type": "module",
